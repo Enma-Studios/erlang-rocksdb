@@ -2,6 +2,11 @@
 
 Since version 0.26.0 Erlang wrapper for RocksDB support customized build.
 
+If you do not need to customize anything and just want to skip the native
+build altogether, see the [Prebuilt Binaries](guides/prebuilt_binaries.md)
+guide: `ERLANG_ROCKSDB_PREBUILT=1` fetches a release-built NIF instead of
+compiling RocksDB locally.
+
 There are manyoptions added to customize build (all are `OFF` by default):
 
 * `WITH_SYSTEM_ROCKSDB=ON` the driver will link with RocksDB shared library provided by host system
