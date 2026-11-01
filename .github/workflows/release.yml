@@ -1,0 +1,87 @@
+name: release
+
+# Builds the NIF with the compression libraries bundled statically and
+# publishes the binaries as release assets, so consumers can skip the
+# native build entirely with ERLANG_ROCKSDB_PREBUILT=1 (see
+# guides/prebuilt_binaries.md and do_prebuilt.sh).
+#
+# Tag pushes (v*) create the GitHub release and attach the assets;
+# manual dispatch only builds and uploads workflow artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ERLANG_ROCKSDB_OPTS: "-DWITH_BUNDLE_LZ4=ON -DWITH_BUNDLE_SNAPPY=ON"
+
+jobs:
+  build:
+    name: ${{ matrix.target }} otp-${{ matrix.otp }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - linux-x86_64
+          - linux-aarch64
+          - darwin-aarch64
+          - darwin-x86_64
+        otp: ["26", "27", "28", "29"]
+        include:
+          - target: linux-x86_64
+            runs-on: ubuntu-24.04
+          - target: linux-aarch64
+            runs-on: ubuntu-24.04-arm
+          - target: darwin-aarch64
+            runs-on: macos-26
+          - target: darwin-x86_64
+            runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: "3.24.0"
+      - name: install cmake
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake
+      - name: build
+        run: rebar3 compile
+      - name: smoke test
+        run: rebar3 eunit --module=db,iterators,batch,transaction_log
+      - name: package
+        run: tools/package_prebuilt.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: erocksdb-otp${{ matrix.otp }}-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: publish release assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: erocksdb-*
+          merge-multiple: true
+          path: dist
+      - name: checksums
+        run: cd dist && sha256sum *.tar.gz > checksums.txt
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --title "$TAG" --generate-notes \
+            dist/*.tar.gz dist/checksums.txt
