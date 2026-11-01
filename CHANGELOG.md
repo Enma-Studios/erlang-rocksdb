@@ -1,3 +1,23 @@
+## erlang-rocksdb 3.2.0, released on 2026/11/02
+
+### Upgrades
+
+- update vendored RocksDB to 11.12 (from 11.1.2)
+- adapt to the 11.12 C++ API: the WAL iterator type rename (`TransactionLogIterator` -> `WalIterator`) and the removed `TableProperties::external_sst_file_global_seqno_offset`
+
+### Breaking Changes
+
+- `sst_file_reader_get_table_properties/2` no longer returns the `external_sst_file_global_seqno_offset` key: RocksDB 11.12 removed the underlying field together with the deprecated global-seqno rewrite APIs
+
+### New Features
+
+- prebuilt NIF binaries published as GitHub release assets for Linux and macOS (x86_64, aarch64) across OTP 26-29, with lz4, snappy, zstd and CRoaring bundled statically. Build against them with `ERLANG_ROCKSDB_PREBUILT=1 rebar3 compile` and skip the native build entirely. See the [Prebuilt Binaries](prebuilt_binaries.html) guide.
+
+### Documentation
+
+- publish the docs to GitHub Pages on every push to master
+- add the prebuilt binaries guide; fix the advertised bundled lz4 version (1.8.3, not 1.10.0)
+
 ## erlang-rocksdb 3.1.2, released on 2026/07/25
 
 ### Bug Fixes
