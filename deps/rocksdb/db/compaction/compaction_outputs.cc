@@ -32,7 +32,7 @@ Status CompactionOutputs::Finish(
         meta->fd.largest_seqno);
     relevant_mapping.SetCapacity(kMaxSeqnoTimePairsPerSST);
     builder_->SetSeqnoTimeTableProperties(relevant_mapping,
-                                          meta->oldest_ancester_time);
+                                          meta->oldest_ancestor_time);
     s = builder_->Finish();
 
   } else {
@@ -73,7 +73,7 @@ IOStatus CompactionOutputs::WriterSyncClose(const Status& input_status,
       WriteOptions(Env::IOActivity::kCompaction), opts);
   if (input_status.ok() && io_s.ok()) {
     StopWatch sw(clock, statistics, COMPACTION_OUTFILE_SYNC_MICROS);
-    io_s = file_writer_->Sync(opts, use_fsync);
+    io_s = use_fsync ? file_writer_->Fsync(opts) : file_writer_->Sync(opts);
   }
   if (input_status.ok() && io_s.ok()) {
     io_s = file_writer_->Close(opts);
@@ -267,11 +267,22 @@ bool CompactionOutputs::ShouldStopBefore(const CompactionIterator& c_iter) {
     return true;
   }
 
-  // If there's user defined partitioner, check that first
-  if (partitioner_ && partitioner_->ShouldPartition(PartitionerRequest(
-                          last_key_for_partitioner_, c_iter.user_key(),
-                          current_output_file_size_)) == kRequired) {
-    return true;
+  if (partitioner_) {
+    if (partitioner_prefix_valid_) {
+      // Fast path: no per-key copy or virtual call. A partition is requested at
+      // the first key that no longer shares the established prefix. An empty
+      // prefix means no further partitions (every key "starts with" it).
+      if (UNLIKELY(!c_iter.user_key().starts_with(partitioner_prefix_))) {
+        return true;
+      }
+    } else {
+      // Slow path: per-key callback (and copy elsewhere)
+      if (UNLIKELY(partitioner_->ShouldPartition(PartitionerRequest(
+                       last_key_for_partitioner_, c_iter.user_key(),
+                       current_output_file_size_)) == kRequired)) {
+        return true;
+      }
+    }
   }
 
   // files output to Level 0 won't be split
@@ -401,11 +412,27 @@ Status CompactionOutputs::AddToOutput(
     if (!s.ok()) {
       return s;
     }
+    // A new output file starts a fresh partition-tracking window. Establish the
+    // partitioner fast path from this file's first key: if the partitioner can
+    // express its next boundary as "first key not sharing this prefix", cache
+    // that prefix; otherwise fall back to per-key ShouldPartition(). This is
+    // the only place the prefix needs to be (re)derived, since a partition
+    // boundary always forces a file cut, and re-deriving on non-partition cuts
+    // just recomputes the same still-valid prefix.
+    if (partitioner_) {
+      OptSlice prefix =
+          partitioner_->ShouldPartitionByPrefix(c_iter.user_key());
+      partitioner_prefix_valid_ = prefix.has_value();
+      if (partitioner_prefix_valid_) {
+        partitioner_prefix_.assign(prefix->data(), prefix->size());
+      }
+    }
   }
 
   // c_iter may emit range deletion keys, so update `last_key_for_partitioner_`
-  // here before returning below when `is_range_del` is true
-  if (partitioner_) {
+  // here before returning below when `is_range_del` is true. Only needed in the
+  // fallback mode; the prefix fast path does not use it.
+  if (partitioner_ && !partitioner_prefix_valid_) {
     last_key_for_partitioner_.assign(c_iter.user_key().data_,
                                      c_iter.user_key().size_);
   }
@@ -790,10 +817,10 @@ void CompactionOutputs::FillFilesToCutForTtl() {
       *(compaction_->inputs(compaction_->num_input_levels() - 1));
   for (FileMetaData* file : olevel) {
     // Worth filtering out by start and end?
-    uint64_t oldest_ancester_time = file->TryGetOldestAncesterTime();
+    uint64_t oldest_ancestor_time = file->TryGetOldestAncestorTime();
     // We put old files if they are not too small to prevent a flood
     // of small files.
-    if (oldest_ancester_time < old_age_thres &&
+    if (oldest_ancestor_time < old_age_thres &&
         file->fd.GetFileSize() >
             compaction_->mutable_cf_options().target_file_size_base / 2) {
       files_to_cut_for_ttl_.push_back(file);

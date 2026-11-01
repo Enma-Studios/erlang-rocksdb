@@ -152,7 +152,12 @@ class Cache : public Customizable {
 
     // For helpers without SecondaryCache support
     explicit CacheItemHelper(CacheEntryRole _role, DeleterFn _del_cb = nullptr)
-        : CacheItemHelper(_role, _del_cb, nullptr, nullptr, nullptr, this) {}
+        : del_cb(_del_cb),
+          size_cb(nullptr),
+          saveto_cb(nullptr),
+          create_cb(nullptr),
+          role(_role),
+          without_secondary_compat(this) {}
 
     // For helpers with SecondaryCache support
     explicit CacheItemHelper(CacheEntryRole _role, DeleterFn _del_cb,
@@ -395,12 +400,17 @@ class Cache : public Customizable {
   }
 
   struct ApplyToAllEntriesOptions {
-    // If the Cache uses locks, setting `average_entries_per_lock` to
-    // a higher value suggests iterating over more entries each time a lock
-    // is acquired, likely reducing the time for ApplyToAllEntries but
-    // increasing latency for concurrent users of the Cache. Setting
-    // `average_entries_per_lock` to a smaller value could be helpful if
-    // callback is relatively expensive, such as using large data structures.
+    // Roughly how many entries to process as a batch between steps of
+    // iterating over the whole cache. Despite the name (kept for historical
+    // reasons), this is fundamentally a batch size and applies regardless of
+    // how a Cache implementation synchronizes: for a lock-based Cache a lock
+    // is held for the duration of each batch, but the same batching also
+    // benefits lock-free implementations by amortizing fixed per-batch
+    // overhead. A higher value means fewer, larger batches, likely reducing
+    // the total time for ApplyToAllEntries, but for a lock-based Cache it
+    // increases latency for concurrent users because a lock is held longer
+    // per batch. A smaller value could be helpful if the callback is
+    // relatively expensive, such as using large data structures.
     size_t average_entries_per_lock = 256;
   };
 

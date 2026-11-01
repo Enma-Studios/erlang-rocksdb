@@ -17,6 +17,10 @@
 #include "rocksdb/utilities/db_ttl.h"
 #include "utilities/compaction_filters/layered_compaction_filter_base.h"
 
+#if USE_COROUTINES
+#include "rocksdb/utilities/coro_stackable_db.h"
+#endif
+
 #ifdef _WIN32
 // Windows API macro interference
 #undef GetCurrentTime
@@ -26,7 +30,12 @@ namespace ROCKSDB_NAMESPACE {
 struct ConfigOptions;
 class ObjectLibrary;
 class ObjectRegistry;
-class DBWithTTLImpl : public DBWithTTL {
+#if USE_COROUTINES
+using DBWithTTLImplBase = CoroStackableDBBase<DBWithTTL>;
+#else
+using DBWithTTLImplBase = DBWithTTL;
+#endif
+class DBWithTTLImpl : public DBWithTTLImplBase {
  public:
   static void SanitizeOptions(int32_t ttl, ColumnFamilyOptions* options,
                               SystemClock* clock);
@@ -52,15 +61,32 @@ class DBWithTTLImpl : public DBWithTTL {
              const Slice& key, const Slice& val) override;
 
   using StackableDB::Get;
-  Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
-             const Slice& key, PinnableSlice* value,
-             std::string* timestamp) override;
+  DECLARE_SYNC_AND_ASYNC_OVERRIDE(Status, Get, const ReadOptions& options,
+                                  ColumnFamilyHandle* column_family,
+                                  const Slice& key, PinnableSlice* value,
+                                  std::string* timestamp);
+
+  using StackableDB::GetWithMetadata;
+  Status GetWithMetadata(const ReadOptions& options,
+                         ColumnFamilyHandle* column_family, const Slice& key,
+                         PinnableSlice* value,
+                         OutputMetadata* output_metadata) override;
 
   using StackableDB::MultiGet;
-  void MultiGet(const ReadOptions& options, const size_t num_keys,
-                ColumnFamilyHandle** column_families, const Slice* keys,
-                PinnableSlice* values, std::string* timestamps,
-                Status* statuses, const bool sorted_input) override;
+  DECLARE_SYNC_AND_ASYNC_OVERRIDE(void, MultiGet, const ReadOptions& options,
+                                  const size_t num_keys,
+                                  ColumnFamilyHandle** column_families,
+                                  const Slice* keys, PinnableSlice* values,
+                                  std::string* timestamps, Status* statuses,
+                                  const bool sorted_input);
+
+  using StackableDB::MultiGetWithMetadata;
+  void MultiGetWithMetadata(const ReadOptions& options, const size_t num_keys,
+                            ColumnFamilyHandle* const* column_families,
+                            const Slice* keys, PinnableSlice* values,
+                            Status* statuses,
+                            MultiGetOutputMetadata* output_metadata,
+                            const bool sorted_input) override;
 
   using StackableDB::KeyMayExist;
   bool KeyMayExist(const ReadOptions& options,
@@ -76,6 +102,14 @@ class DBWithTTLImpl : public DBWithTTL {
   using StackableDB::NewIterator;
   Iterator* NewIterator(const ReadOptions& _read_options,
                         ColumnFamilyHandle* column_family) override;
+
+  using StackableDB::NewIterators;
+  Status NewIterators(const ReadOptions& read_options,
+                      const std::vector<ColumnFamilyHandle*>& column_families,
+                      std::vector<Iterator*>* iterators) override;
+  Status NewIterators(const std::vector<ReadOptions>& read_options,
+                      const std::vector<ColumnFamilyHandle*>& column_families,
+                      std::vector<Iterator*>* iterators) override;
 
   DB* GetBaseDB() override { return db_; }
 
@@ -103,6 +137,14 @@ class DBWithTTLImpl : public DBWithTTL {
   Status GetTtl(ColumnFamilyHandle* h, int32_t* ttl) override;
 
  private:
+  void MultiGetInternal(const ReadOptions& options, const size_t num_keys,
+                        ColumnFamilyHandle* const* column_families,
+                        const Slice* keys, PinnableSlice* values,
+                        std::string* timestamps, Status* statuses,
+                        MultiGetOutputMetadata* output_metadata,
+                        std::vector<uint8_t>* newer_version_present,
+                        const bool sorted_input);
+
   // remember whether the Close completes or not
   bool closed_;
 };
