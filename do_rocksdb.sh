@@ -1,8 +1,8 @@
 #!/bin/sh -x
 
 if [ "${ERLANG_ROCKSDB_PREBUILT}" = "1" ]; then
-    [ -f priv/erocksdb.so ] || { echo "prebuilt priv/erocksdb.so is missing (do_prebuilt.sh failed?)" >&2; exit 1; }
-    echo "using prebuilt priv/erocksdb.so"
+    [ -f priv/liberocksdb.so ] || { echo "prebuilt priv/liberocksdb.so is missing (do_prebuilt.sh failed?)" >&2; exit 1; }
+    echo "using prebuilt priv/liberocksdb.so"
     exit 0
 fi
 

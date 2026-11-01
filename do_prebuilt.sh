@@ -46,13 +46,13 @@ fi
 
 command -v curl >/dev/null 2>&1 || die "curl is required to fetch prebuilts"
 
-# Cached install: keep priv/erocksdb.so when its checksum still matches the
+# Cached install: keep priv/liberocksdb.so when its checksum still matches the
 # recorded one, so repeated rebar3 invocations do not re-download.
-if [ -f priv/erocksdb.so ] && [ -f priv/erocksdb.so.sha256 ]; then
-    CURRENT=$(prebuilt_sha_of priv/erocksdb.so)
-    RECORDED=$(sed 's/ .*//' priv/erocksdb.so.sha256)
+if [ -f priv/liberocksdb.so ] && [ -f priv/liberocksdb.so.sha256 ]; then
+    CURRENT=$(prebuilt_sha_of priv/liberocksdb.so)
+    RECORDED=$(sed 's/ .*//' priv/liberocksdb.so.sha256)
     if [ "$CURRENT" = "$RECORDED" ]; then
-        echo "do_prebuilt: priv/erocksdb.so is already the fetched prebuilt, keeping it"
+        echo "do_prebuilt: priv/liberocksdb.so is already the fetched prebuilt, keeping it"
         exit 0
     fi
 fi
@@ -94,9 +94,9 @@ else
     echo "do_prebuilt: no checksums.txt at this release, skipping verification" >&2
 fi
 
-rm -f priv/erocksdb.so priv/erocksdb.so.sha256 priv/PREBUILT.txt
+rm -f priv/liberocksdb.so priv/liberocksdb.so.sha256 priv/PREBUILT.txt
 tar -xzf "$TMPDIR_PREBUILT/$ASSET" -C .
-[ -f priv/erocksdb.so ] || die "$ASSET did not contain priv/erocksdb.so"
+[ -f priv/liberocksdb.so ] || die "$ASSET did not contain priv/liberocksdb.so"
 
 [ -f priv/PREBUILT.txt ] && cat priv/PREBUILT.txt
 echo "do_prebuilt: installed $ASSET into priv/"

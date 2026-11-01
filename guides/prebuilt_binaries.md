@@ -20,7 +20,7 @@ The same variable works when `rocksdb` is one of your dependencies, in
 `make`, in CI, everywhere rebar3 runs the compile hooks: the build
 downloads the matching tarball from the project's GitHub releases,
 verifies it against the release's `checksums.txt`, and unpacks
-`priv/erocksdb.so` in place of the native build. A repeat build finds
+`priv/liberocksdb.so` in place of the native build. A repeat build finds
 the recorded checksum and skips the download.
 
 If you would rather not type it, export it once per environment:
@@ -63,11 +63,13 @@ environments where `erl` is not on the path when the hooks run.
 
 ## Runtime requirements
 
-The NIF keeps only two dynamic dependencies: the platform C++ standard
-library and OpenSSL's `libcrypto` (the encrypted-env feature links it).
-On Linux both come from your distribution (`libstdc++6`, `libssl3` /
-`openssl-libs`). On macOS the binaries are linked against Homebrew's
-`openssl@3`, so `brew install openssl@3` covers it.
+lz4, snappy and CRoaring are linked in statically. What remains dynamic
+depends on the platform: on Linux the C++ standard library
+(`libstdc++6`), `libcrypto` (`libssl3` / `openssl-libs`) and zstd when
+the build picked a system copy — every release asset lists its exact
+dependencies in its `PREBUILT.txt`. On macOS the binaries link
+Homebrew's `openssl` and `zstd`, so `brew install openssl zstd` covers
+it.
 
 macOS x86_64 assets are built on Intel runners, aarch64 assets on
 Apple Silicon; the two are not interchangeable.
