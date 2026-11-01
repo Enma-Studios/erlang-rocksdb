@@ -33,9 +33,6 @@ rebar3 do clean,compile
 `rebar3 clean` removes the NIF together with its checksum stamp, so
 the next compile fetches again.
 
-Pinning the library itself to a git ref? See
-[Git Dependency](git_dependency.md).
-
 ## What gets downloaded
 
 Assets are named `erocksdb-otp<MAJOR>-<os>-<arch>.tar.gz`:

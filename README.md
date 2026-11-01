@@ -49,6 +49,27 @@ ERLANG_ROCKSDB_PREBUILT=1 rebar3 compile
 
 See [Prebuilt Binaries](https://enma-studios.github.io/erlang-rocksdb/prebuilt_binaries.html) for what is published and the available overrides.
 
+## Using this fork as a dependency
+
+Pin it by git commit ref (overrides the hex package of the same name):
+
+**rebar3**
+
+```erlang
+{deps, [
+    {rocksdb, {git, "https://github.com/Enma-Studios/erlang-rocksdb.git",
+                {ref, "0efc187a"}}}
+]}.
+```
+
+**mix**
+
+```elixir
+{:rocksdb, git: "https://github.com/Enma-Studios/erlang-rocksdb.git", ref: "0efc187a"}
+```
+
+`{tag, "v3.2.0"}` / `tag: "v3.2.0"` and `{branch, "master"}` / `branch: "master"` work too. Set `ERLANG_ROCKSDB_PREBUILT=1` to skip the native build; a pin ahead of the last tag needs `ERLANG_ROCKSDB_PREBUILT_TAG=latest`.
+
 ## Customized build ##
 
 See the [Customized builds](https://hexdocs.pm/rocksdb/CUSTOMIZED_BUILDS.html) for more information.
