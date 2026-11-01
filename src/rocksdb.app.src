@@ -31,6 +31,7 @@
            "rebar.config.script",
            "do_cmake.sh",
            "do_rocksdb.sh",
+           "do_prebuilt.sh",
            "README.md",
            "LICENSE",
            "CHANGELOG.md",

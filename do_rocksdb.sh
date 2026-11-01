@@ -1,5 +1,11 @@
 #!/bin/sh -x
 
+if [ "${ERLANG_ROCKSDB_PREBUILT}" = "1" ]; then
+    [ -f priv/erocksdb.so ] || { echo "prebuilt priv/erocksdb.so is missing (do_prebuilt.sh failed?)" >&2; exit 1; }
+    echo "using prebuilt priv/erocksdb.so"
+    exit 0
+fi
+
 cd _build/cmake
 
 if type cmake3 > /dev/null 2>&1 ; then

@@ -1,5 +1,10 @@
 #!/bin/sh -x
 
+if [ "${ERLANG_ROCKSDB_PREBUILT}" = "1" ]; then
+    ./do_prebuilt.sh || exit 1
+    exit 0
+fi
+
 mkdir -p _build/cmake
 cd _build/cmake
 
