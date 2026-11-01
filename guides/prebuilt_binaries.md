@@ -4,32 +4,33 @@ Every release of this library ships ready-built NIF binaries as GitHub
 release assets, so you can install `erlang-rocksdb` without compiling
 RocksDB, lz4, snappy, zstd and CRoaring — the C++ part of the build is
 tens of minutes and several gigabytes of RAM on a laptop, and it needs
-cmake plus a C++20 compiler. The prebuilts bundle all four compression
-libraries statically; the only runtime dependencies are the system C++
-library and OpenSSL's `libcrypto`.
+cmake plus a C++20 compiler. The build fetches them by default
+whenever they can match your tree; see below for when that is.
 
 ## Using them
 
-Set one environment variable and build as usual:
+Nothing to set: whenever the tree matches a published release — a git
+pin checked out exactly at a release tag, or a hex-style package tree,
+where the package version is the release — a plain build fetches the
+matching NIF instead of compiling RocksDB:
 
 ```sh
-ERLANG_ROCKSDB_PREBUILT=1 rebar3 compile
+rebar3 compile
 ```
 
-The same variable works when `rocksdb` is one of your dependencies, in
-`make`, in CI, everywhere rebar3 runs the compile hooks: the build
-downloads the matching tarball from the project's GitHub releases,
-verifies it against the release's `checksums.txt`, and unpacks
-`priv/liberocksdb.so` in place of the native build. A repeat build finds
-the recorded checksum and skips the download.
+Any miss falls back to the source build automatically: a pin ahead of
+the last tag, local edits to the native code, a platform without
+assets, or `ERLANG_ROCKSDB_OPTS` being set (cmake options on a
+downloaded binary make no sense, so customizing implies building).
 
-If you would rather not type it, export it once per environment:
+The two knobs override the default:
 
-```sh
-export ERLANG_ROCKSDB_PREBUILT=1
-rebar3 do clean,compile
-```
+* `ERLANG_ROCKSDB_PREBUILT=1` — require binaries, fail the build when
+  none are usable. Add `ERLANG_ROCKSDB_PREBUILT_TAG=latest` when
+  pinning beyond the last release.
+* `ERLANG_ROCKSDB_PREBUILT=0` — never fetch, always build from source.
 
+A repeat build finds the recorded checksum and skips the download.
 `rebar3 clean` removes the NIF together with its checksum stamp, so
 the next compile fetches again.
 

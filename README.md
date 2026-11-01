@@ -40,12 +40,7 @@ See the [Doc](https://enma-studios.github.io/erlang-rocksdb/) for more explanati
 
 ## Prebuilt binaries
 
-Skip the native build entirely by fetching a release-built NIF for your OS,
-architecture and OTP major:
-
-```
-ERLANG_ROCKSDB_PREBUILT=1 rebar3 compile
-```
+Nothing to set: when the tree matches a published release (a git pin at a release tag, or a hex-style package tree), `rebar3 compile` fetches a release-built NIF for your OS, architecture and OTP major instead of compiling RocksDB, and falls back to the source build otherwise. `ERLANG_ROCKSDB_PREBUILT=1` requires binaries, `=0` forces a source build.
 
 See [Prebuilt Binaries](https://enma-studios.github.io/erlang-rocksdb/prebuilt_binaries.html) for what is published and the available overrides.
 
@@ -68,7 +63,7 @@ Pin it by git commit ref (overrides the hex package of the same name):
 {:rocksdb, git: "https://github.com/Enma-Studios/erlang-rocksdb.git", ref: "0efc187a"}
 ```
 
-`{tag, "v3.2.0"}` / `tag: "v3.2.0"` and `{branch, "master"}` / `branch: "master"` work too. Set `ERLANG_ROCKSDB_PREBUILT=1` to skip the native build; a pin ahead of the last tag needs `ERLANG_ROCKSDB_PREBUILT_TAG=latest`.
+`{tag, "v3.2.0"}` / `tag: "v3.2.0"` and `{branch, "master"}` / `branch: "master"` work too. A pin exactly at a release tag uses its prebuilt binaries by default; anything else builds from source. `ERLANG_ROCKSDB_PREBUILT=1` requires binaries (add `ERLANG_ROCKSDB_PREBUILT_TAG=latest` when pinning beyond the last tag), `=0` forces a source build.
 
 ## Customized build ##
 
