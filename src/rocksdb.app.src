@@ -32,6 +32,7 @@
            "do_cmake.sh",
            "do_rocksdb.sh",
            "do_prebuilt.sh",
+           "tools/prebuilt_env.sh",
            "README.md",
            "LICENSE",
            "CHANGELOG.md",
