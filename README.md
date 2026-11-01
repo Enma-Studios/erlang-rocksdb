@@ -1,6 +1,6 @@
 # erlang-rocksdb - Erlang wrapper for RocksDB
 
-[![Build Status](https://github.com/EnkiMultimedia/erlang-rocksdb/workflows/build/badge.svg)](https://github.com/EnkiMultimedia/erlang-rocksdb/actions?query=workflow%3Abuild)
+[![Build Status](https://github.com/Enma-Studios/erlang-rocksdb/workflows/build/badge.svg)](https://github.com/Enma-Studios/erlang-rocksdb/actions?query=workflow%3Abuild)
 [![Hex pm](http://img.shields.io/hexpm/v/rocksdb.svg?style=flat)](https://hex.pm/packages/rocksdb)
 
 **Current version: 3.1.2**
@@ -11,7 +11,8 @@ Feedback and pull requests welcome! If a particular feature of RocksDB is import
 
 ## Features
 
-- RocksDB 11.1.2 with snappy 1.2.1, lz4 1.10.0, zstd 1.5.7
+- RocksDB 11.12 with snappy 1.2.1, lz4 1.8.3, zstd 1.5.7
+- Prebuilt NIF binaries for Linux and macOS (x86_64, aarch64), OTP 26-29
 - Erlang 22+ with dirty-nifs enabled
 - All basic db operations (get, put, delete, merge, multi_get)
 - Wide-column entity API (put_entity, get_entity, iterator_columns)
@@ -33,9 +34,20 @@ Feedback and pull requests welcome! If a particular feature of RocksDB is import
 
 ## Usage
 
-See the [Doc](https://hexdocs.pm/rocksdb/) for more explanation.
+See the [Doc](https://enma-studios.github.io/erlang-rocksdb/) for more explanation.
 
 > Note: since the version **0.26.0**, `cmake>=3.4` is required to install `erlang-rocksdb`.
+
+## Prebuilt binaries
+
+Skip the native build entirely by fetching a release-built NIF for your OS,
+architecture and OTP major:
+
+```
+ERLANG_ROCKSDB_PREBUILT=1 rebar3 compile
+```
+
+See [Prebuilt Binaries](https://enma-studios.github.io/erlang-rocksdb/prebuilt_binaries.html) for what is published and the available overrides.
 
 ## Customized build ##
 
@@ -43,7 +55,7 @@ See the [Customized builds](https://hexdocs.pm/rocksdb/CUSTOMIZED_BUILDS.html) f
 
 ## Support
 
-Support, Design and discussions are done via the [Github Tracker](https://github.com/EnkiMultimedia/erlang-rocksdb/issues).
+Support, Design and discussions are done via the [Github Tracker](https://github.com/Enma-Studios/erlang-rocksdb/issues).
 
 Professional support is available via [Enki Multimedia](https://enki-multimedia.eu). Contact sales@enki-multimedia.eu.
 

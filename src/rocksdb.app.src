@@ -26,7 +26,7 @@
   {env, []},
 
   {licenses, ["Apache-2.0"]},
-  {links, [{"Github", "https://github.com/EnkiMultimedia/erlang-rocksdb"}]},
+  {links, [{"Github", "https://github.com/Enma-Studios/erlang-rocksdb"}]},
   {files, ["rebar.config",
            "rebar.config.script",
            "do_cmake.sh",
