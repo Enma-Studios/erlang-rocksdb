@@ -48,7 +48,7 @@ jobs:
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
-          rebar3-version: "3.24.0"
+          rebar3-version: "3.28.0"
       - name: install cmake
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake
