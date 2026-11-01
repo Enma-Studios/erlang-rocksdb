@@ -21,11 +21,20 @@ jobs:
       - name: check doc snippets
         run: python3 tools/check_docs.py
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        otp:  ["25.3", "26.2", "27.2", "28", "29"]
-        rebar3: ['3.24.0']
+        include:
+          - otp: "25.3"
+            rebar3: "3.24.0"
+          - otp: "26.2"
+            rebar3: "3.24.0"
+          - otp: "27.2"
+            rebar3: "3.24.0"
+          - otp: "28"
+            rebar3: "3.28.0"
+          - otp: "29"
+            rebar3: "3.28.0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,11 +50,20 @@ jobs:
       - name: build
         run: rebar3 eunit
   linux-shared-libs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        otp:  ["25.3", "26.2", "27.2", "28", "29"]
-        rebar3: ['3.24.0']
+        include:
+          - otp: "25.3"
+            rebar3: "3.24.0"
+          - otp: "26.2"
+            rebar3: "3.24.0"
+          - otp: "27.2"
+            rebar3: "3.24.0"
+          - otp: "28"
+            rebar3: "3.28.0"
+          - otp: "29"
+            rebar3: "3.28.0"
     env:
       # Override global env to use system libraries instead of bundled
       ERLANG_ROCKSDB_OPTS: "-DWITH_LZ4=ON -DWITH_SNAPPY=ON"
@@ -66,7 +84,7 @@ jobs:
   package:
     # build the tree the way a hex consumer gets it: no .git, no system
     # snappy/lz4 and no bundled overrides
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       ERLANG_ROCKSDB_OPTS: ""
     steps:
