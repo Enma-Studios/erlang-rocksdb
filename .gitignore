@@ -1,5 +1,6 @@
 .eunit/*
 priv/*
+dist
 doc
 *.o
 *.beam
