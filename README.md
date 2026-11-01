@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/Enma-Studios/erlang-rocksdb/workflows/build/badge.svg)](https://github.com/Enma-Studios/erlang-rocksdb/actions?query=workflow%3Abuild)
 [![Hex pm](http://img.shields.io/hexpm/v/rocksdb.svg?style=flat)](https://hex.pm/packages/rocksdb)
 
-**Current version: 3.1.2**
+**Current version: 3.2.0**
 
 Copyright (c) 2016-2026 Benoît Chesneau
 
