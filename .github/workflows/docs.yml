@@ -1,0 +1,49 @@
+name: docs
+
+# Publishes the ex_doc output (module reference + guides) to GitHub
+# Pages on every push to master. Dogfoods the prebuilt NIF when the
+# current version has release assets, and falls back to a source build
+# otherwise (e.g. on master before the version is tagged).
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          rebar3-version: "3.24.0"
+      - name: install cmake
+        run: sudo apt-get update && sudo apt-get install -y cmake
+      - name: build docs
+        run: |
+          if ERLANG_ROCKSDB_PREBUILT=1 rebar3 ex_doc; then
+            echo "docs built against the prebuilt NIF"
+          else
+            echo "no prebuilt for this version yet, building from source"
+            rebar3 ex_doc
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc
+      - id: deployment
+        uses: actions/deploy-pages@v4
