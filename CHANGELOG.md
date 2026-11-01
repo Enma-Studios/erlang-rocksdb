@@ -1,3 +1,9 @@
+## erlang-rocksdb 3.2.1, released on 2026/11/02
+
+### New Features
+
+- prebuilt NIF binaries are now the default: a plain `rebar3 compile` fetches the release-built NIF whenever the tree matches a published release (a git pin checked out at a release tag, or a hex-style package tree) and falls back to the source build otherwise — a pin ahead of the last tag, local edits to the native code, platforms without assets or a set `ERLANG_ROCKSDB_OPTS` all build from source. `ERLANG_ROCKSDB_PREBUILT=1` requires binaries, `=0` forces the source build
+
 ## erlang-rocksdb 3.2.0, released on 2026/11/02
 
 ### Upgrades
