@@ -3,7 +3,8 @@
 # Fetch a prebuilt erocksdb NIF from the project's GitHub releases and
 # install it into priv/, replacing the native cmake build entirely.
 #
-# Activated by the caller (do_cmake.sh) when ERLANG_ROCKSDB_PREBUILT=1.
+# Called by do_cmake.sh: by default whenever the tree matches a
+# published release, or forced with ERLANG_ROCKSDB_PREBUILT=1.
 #
 # Override knobs:
 #   ERLANG_ROCKSDB_PREBUILT_REPO   GitHub <owner>/<repo> holding the releases
