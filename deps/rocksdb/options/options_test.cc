@@ -10,6 +10,8 @@
 #include <cctype>
 #include <cinttypes>
 #include <cstring>
+#include <map>
+#include <type_traits>
 #include <unordered_map>
 
 #include "cache/lru_cache.h"
@@ -44,6 +46,11 @@ DEFINE_bool(enable_print, false, "Print options generated to console.");
 #endif  // GFLAGS
 
 namespace ROCKSDB_NAMESPACE {
+
+// ReadOptions is copied frequently on read paths, so keep it cheap to copy:
+// all members must stay trivially copyable (use pointers, not std::function /
+// std::string / std::shared_ptr members).
+static_assert(std::is_trivially_copyable_v<ReadOptions>);
 
 class OptionsTest : public testing::Test {};
 
@@ -125,7 +132,9 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"enable_blob_files", "true"},
       {"min_blob_size", "1K"},
       {"blob_file_size", "1G"},
+      {"blob_file_writable_file_max_buffer_size", "128K"},
       {"blob_compression_type", "kZSTD"},
+      {"blob_compression_opts", "-14:1:0:0:0:true"},
       {"enable_blob_garbage_collection", "true"},
       {"blob_garbage_collection_age_cutoff", "0.5"},
       {"blob_garbage_collection_force_threshold", "0.75"},
@@ -147,6 +156,8 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"track_and_verify_wals_in_manifest", "true"},
       {"track_and_verify_wals", "true"},
       {"verify_sst_unique_id_in_manifest", "true"},
+      {"async_wal_precreate", "true"},
+      {"fast_sst_open", "true"},
       {"max_open_files", "32"},
       {"max_total_wal_size", "33"},
       {"use_fsync", "true"},
@@ -168,6 +179,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"allow_mmap_reads", "true"},
       {"allow_mmap_writes", "false"},
       {"use_direct_reads", "false"},
+      {"use_direct_io_for_compaction_reads", "false"},
       {"use_direct_io_for_flush_and_compaction", "false"},
       {"is_fd_close_on_exec", "true"},
       {"skip_log_error_on_recovery", "false"},
@@ -281,7 +293,9 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.enable_blob_files, true);
   ASSERT_EQ(new_cf_opt.min_blob_size, 1ULL << 10);
   ASSERT_EQ(new_cf_opt.blob_file_size, 1ULL << 30);
+  ASSERT_EQ(new_cf_opt.blob_file_writable_file_max_buffer_size, 128ULL << 10);
   ASSERT_EQ(new_cf_opt.blob_compression_type, kZSTD);
+  ASSERT_EQ(new_cf_opt.blob_compression_opts.level, 1);
   ASSERT_EQ(new_cf_opt.enable_blob_garbage_collection, true);
   ASSERT_EQ(new_cf_opt.blob_garbage_collection_age_cutoff, 0.5);
   ASSERT_EQ(new_cf_opt.blob_garbage_collection_force_threshold, 0.75);
@@ -329,6 +343,8 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.track_and_verify_wals_in_manifest, true);
   ASSERT_EQ(new_db_opt.track_and_verify_wals, true);
   ASSERT_EQ(new_db_opt.verify_sst_unique_id_in_manifest, true);
+  ASSERT_EQ(new_db_opt.async_wal_precreate, true);
+  ASSERT_EQ(new_db_opt.fast_sst_open, true);
   ASSERT_EQ(new_db_opt.max_open_files, 32);
   ASSERT_EQ(new_db_opt.max_total_wal_size, static_cast<uint64_t>(33));
   ASSERT_EQ(new_db_opt.use_fsync, true);
@@ -351,6 +367,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.allow_mmap_reads, true);
   ASSERT_EQ(new_db_opt.allow_mmap_writes, false);
   ASSERT_EQ(new_db_opt.use_direct_reads, false);
+  ASSERT_EQ(new_db_opt.use_direct_io_for_compaction_reads, false);
   ASSERT_EQ(new_db_opt.use_direct_io_for_flush_and_compaction, false);
   ASSERT_EQ(new_db_opt.is_fd_close_on_exec, true);
   ASSERT_EQ(new_db_opt.stats_dump_period_sec, 46U);
@@ -410,6 +427,10 @@ TEST_F(OptionsTest, GetColumnFamilyOptionsFromStringTest) {
   ASSERT_OK(GetColumnFamilyOptionsFromString(
       config_options, base_cf_opt, "write_buffer_size=6;", &new_cf_opt));
   ASSERT_EQ(new_cf_opt.write_buffer_size, 6U);
+  ASSERT_OK(GetColumnFamilyOptionsFromString(
+      config_options, base_cf_opt,
+      "memtable_verify_per_key_checksum_on_seek=true", &new_cf_opt));
+  ASSERT_TRUE(new_cf_opt.memtable_verify_per_key_checksum_on_seek);
   ASSERT_OK(GetColumnFamilyOptionsFromString(
       config_options, base_cf_opt, "  write_buffer_size =  7  ", &new_cf_opt));
   ASSERT_EQ(new_cf_opt.write_buffer_size, 7U);
@@ -902,6 +923,8 @@ TEST_F(OptionsTest, OldInterfaceTest) {
       {"track_and_verify_wals_in_manifest", "true"},
       {"track_and_verify_wals", "true"},
       {"verify_sst_unique_id_in_manifest", "true"},
+      {"async_wal_precreate", "true"},
+      {"fast_sst_open", "true"},
       {"max_open_files", "32"},
       {"daily_offpeak_time_utc", "06:30-23:30"},
   };
@@ -918,6 +941,8 @@ TEST_F(OptionsTest, OldInterfaceTest) {
   ASSERT_EQ(new_db_opt.track_and_verify_wals_in_manifest, true);
   ASSERT_EQ(new_db_opt.track_and_verify_wals, true);
   ASSERT_EQ(new_db_opt.verify_sst_unique_id_in_manifest, true);
+  ASSERT_EQ(new_db_opt.async_wal_precreate, true);
+  ASSERT_EQ(new_db_opt.fast_sst_open, true);
   ASSERT_EQ(new_db_opt.max_open_files, 32);
   db_options_map["unknown_option"] = "1";
   Status s = GetDBOptionsFromMap(db_config_options, base_db_opt, db_options_map,
@@ -1928,11 +1953,13 @@ TEST_F(OptionsTest, StringToMapTest) {
   ASSERT_EQ(opts_map["k2"], "");
   ASSERT_TRUE(opts_map.find("k3") != opts_map.end());
   ASSERT_EQ(opts_map["k3"], "");
-  // Regular nested options
+  // Regular nested options. Braces are preserved on values that came in
+  // braced, so the value is self-contained for direct embedding via
+  // `key=value;` and round-trips through StringToMap/MapToString.
   opts_map.clear();
   ASSERT_OK(StringToMap("k1=v1;k2={nk1=nv1;nk2=nv2};k3=v3", &opts_map));
   ASSERT_EQ(opts_map["k1"], "v1");
-  ASSERT_EQ(opts_map["k2"], "nk1=nv1;nk2=nv2");
+  ASSERT_EQ(opts_map["k2"], "{nk1=nv1;nk2=nv2}");
   ASSERT_EQ(opts_map["k3"], "v3");
   // Multi-level nested options
   opts_map.clear();
@@ -1941,34 +1968,35 @@ TEST_F(OptionsTest, StringToMapTest) {
                   "k3={nk1={nnk1={nnnk1=nnnv1;nnnk2;nnnv2}}};k4=v4",
                   &opts_map));
   ASSERT_EQ(opts_map["k1"], "v1");
-  ASSERT_EQ(opts_map["k2"], "nk1=nv1;nk2={nnk1=nnk2}");
-  ASSERT_EQ(opts_map["k3"], "nk1={nnk1={nnnk1=nnnv1;nnnk2;nnnv2}}");
+  ASSERT_EQ(opts_map["k2"], "{nk1=nv1;nk2={nnk1=nnk2}}");
+  ASSERT_EQ(opts_map["k3"], "{nk1={nnk1={nnnk1=nnnv1;nnnk2;nnnv2}}}");
   ASSERT_EQ(opts_map["k4"], "v4");
   // Garbage inside curly braces
   opts_map.clear();
   ASSERT_OK(StringToMap("k1=v1;k2={dfad=};k3={=};k4=v4", &opts_map));
   ASSERT_EQ(opts_map["k1"], "v1");
-  ASSERT_EQ(opts_map["k2"], "dfad=");
-  ASSERT_EQ(opts_map["k3"], "=");
+  ASSERT_EQ(opts_map["k2"], "{dfad=}");
+  ASSERT_EQ(opts_map["k3"], "{=}");
   ASSERT_EQ(opts_map["k4"], "v4");
   // Empty nested options
   opts_map.clear();
   ASSERT_OK(StringToMap("k1=v1;k2={};", &opts_map));
   ASSERT_EQ(opts_map["k1"], "v1");
-  ASSERT_EQ(opts_map["k2"], "");
+  ASSERT_EQ(opts_map["k2"], "{}");
   opts_map.clear();
   ASSERT_OK(StringToMap("k1=v1;k2={{{{}}}{}{}};", &opts_map));
   ASSERT_EQ(opts_map["k1"], "v1");
-  ASSERT_EQ(opts_map["k2"], "{{{}}}{}{}");
-  // With random spaces
+  ASSERT_EQ(opts_map["k2"], "{{{{}}}{}{}}");
+  // With random spaces. Internal whitespace is preserved verbatim now
+  // (we keep the original substring of the value rather than trimming).
   opts_map.clear();
   ASSERT_OK(
       StringToMap("  k1 =  v1 ; k2= {nk1=nv1; nk2={nnk1=nnk2}}  ; "
                   "k3={  {   } }; k4= v4  ",
                   &opts_map));
   ASSERT_EQ(opts_map["k1"], "v1");
-  ASSERT_EQ(opts_map["k2"], "nk1=nv1; nk2={nnk1=nnk2}");
-  ASSERT_EQ(opts_map["k3"], "{   }");
+  ASSERT_EQ(opts_map["k2"], "{nk1=nv1; nk2={nnk1=nnk2}}");
+  ASSERT_EQ(opts_map["k3"], "{  {   } }");
   ASSERT_EQ(opts_map["k4"], "v4");
 
   // Empty key
@@ -1998,6 +2026,165 @@ TEST_F(OptionsTest, StringToMapTest) {
   ASSERT_NOK(StringToMap("k1=v1;k2={{dfdl}adfa}{}", &opts_map));
 }
 
+TEST_F(OptionsTest, EmptyBracedVectorAndBracedScalarTest) {
+  // An empty braced list value (`key={}`) must parse as an empty
+  // collection, not as a vector with one empty element. StringToMap
+  // preserves the braces, so the typed vector parser sees `{}`; its
+  // outer-brace strip needs to handle the size-2 case.
+  ColumnFamilyOptions cf_opts;
+  ConfigOptions cfg;
+  ASSERT_OK(GetColumnFamilyOptionsFromString(
+      cfg, ColumnFamilyOptions(), "compression_per_level={};", &cf_opts));
+  EXPECT_TRUE(cf_opts.compression_per_level.empty());
+
+  // A scalar value wrapped in `{}` (e.g. hand-crafted `key={42}`) must
+  // still parse. StringToMap preserves the braces, so the scalar
+  // dispatch in OptionTypeInfo::Parse permissively strips one outer
+  // layer.
+  DBOptions db_opts;
+  ASSERT_OK(GetDBOptionsFromString(cfg, DBOptions(), "max_open_files={42};",
+                                   &db_opts));
+  EXPECT_EQ(db_opts.max_open_files, 42);
+
+  ASSERT_OK(GetDBOptionsFromString(cfg, DBOptions(),
+                                   "create_if_missing={true};", &db_opts));
+  EXPECT_TRUE(db_opts.create_if_missing);
+}
+
+TEST_F(OptionsTest, MapToStringTest) {
+  using Map = std::unordered_map<std::string, std::string>;
+  std::string s;
+
+  // Simple values.
+  Map simple{{"a", "1"}, {"b", "hello"}};
+  ASSERT_OK(MapToString(simple, &s));
+  Map reparsed;
+  ASSERT_OK(StringToMap(s, &reparsed));
+  ASSERT_EQ(reparsed, simple);
+
+  // A value already in self-contained braced form (as returned by
+  // StringToMap) passes through unchanged. No extra wrapping is needed
+  // for round-trip.
+  Map already_braced{{"k", "{a=b;c=d}"}};
+  ASSERT_OK(MapToString(already_braced, &s));
+  ASSERT_EQ(s, "k={a=b;c=d};");
+  Map reparsed_braced;
+  ASSERT_OK(StringToMap(s, &reparsed_braced));
+  ASSERT_EQ(reparsed_braced, already_braced);
+}
+
+TEST_F(OptionsTest, StringToMapMapToStringRoundTripTest) {
+  using Map = std::unordered_map<std::string, std::string>;
+  // Pull a single entry out of a StringToMap-ed map and re-embed it
+  // directly into a `key=value;` SetOptions-style string. The pulled
+  // value must round-trip without any extra escaping by the caller --
+  // this is the property that lets users compose option strings from
+  // map entries safely.
+  const std::string original =
+      "filter_policy={id=ribbonfilter:10:-1;bloom_before_level=-1;};"
+      "block_size=4096;cache_index_and_filter_blocks=true";
+
+  Map parsed;
+  ASSERT_OK(StringToMap(original, &parsed));
+  // The filter_policy value retains its braces -- it's self-contained.
+  EXPECT_EQ(parsed["filter_policy"],
+            "{id=ribbonfilter:10:-1;bloom_before_level=-1;}");
+  EXPECT_EQ(parsed["block_size"], "4096");
+  EXPECT_EQ(parsed["cache_index_and_filter_blocks"], "true");
+
+  // Pull a single entry out and embed it in a fresh `key=value;`
+  // string. No extra wrapping required by the caller.
+  const std::string embedded =
+      "filter_policy=" + parsed["filter_policy"] + ";other_opt=42";
+  Map reparsed;
+  ASSERT_OK(StringToMap(embedded, &reparsed));
+  EXPECT_EQ(reparsed["filter_policy"], parsed["filter_policy"]);
+  EXPECT_EQ(reparsed["other_opt"], "42");
+
+  // Whole-map round-trip via MapToString.
+  std::string regenerated;
+  ASSERT_OK(MapToString(parsed, &regenerated));
+  Map reparsed2;
+  ASSERT_OK(StringToMap(regenerated, &reparsed2));
+  EXPECT_EQ(reparsed2, parsed);
+}
+
+TEST_F(OptionsTest, FullOptionsStringToMapRoundTripTest) {
+  // Round-trip a populated DBOptions and CFOptions through the
+  // StringToMap -> MapToString path. This catches any custom option
+  // serializer that emits a value containing the StringToMap delimiter
+  // (';') without enclosing it in '{}' -- such a value would survive
+  // StringToMap as a self-contained entry but corrupt subsequent
+  // re-serialization. Existing typed tests
+  // (ColumnFamilyOptionsSerialization, DBOptionsSerialization) cover the
+  // typed Configurable round-trip; this test specifically exercises the
+  // public StringToMap + MapToString path that callers use to compose,
+  // mutate, and re-emit option strings.
+  Random rnd(607);
+  ConfigOptions config_options;
+  config_options.input_strings_escaped = false;
+
+  // ---- ColumnFamilyOptions ----
+  Options options;
+  ColumnFamilyOptions base_cf_opt;
+  base_cf_opt.comparator = test::BytewiseComparatorWithU64TsWrapper();
+  test::RandomInitCFOptions(&base_cf_opt, options, &rnd);
+  std::string cf_str;
+  ASSERT_OK(
+      GetStringFromColumnFamilyOptions(config_options, base_cf_opt, &cf_str));
+
+  std::unordered_map<std::string, std::string> cf_map;
+  ASSERT_OK(StringToMap(cf_str, &cf_map));
+  // Each entry must be embeddable as-is in a `key=value;` context.
+  for (const auto& [k, v] : cf_map) {
+    std::string solo;
+    solo.append(k).append("=").append(v).append(";");
+    std::unordered_map<std::string, std::string> solo_map;
+    ASSERT_OK(StringToMap(solo, &solo_map))
+        << "single-entry round-trip failed for " << k << ": " << v;
+    ASSERT_EQ(solo_map.size(), 1u) << k << "=" << v;
+    ASSERT_EQ(solo_map[k], v) << "single-entry value mismatch for " << k;
+  }
+  // Whole-map MapToString must reproduce a string parseable into a CF
+  // options object equivalent to the original.
+  std::string cf_round;
+  ASSERT_OK(MapToString(cf_map, &cf_round));
+  ColumnFamilyOptions cf_back;
+  ASSERT_OK(GetColumnFamilyOptionsFromString(
+      config_options, ColumnFamilyOptions(), cf_round, &cf_back));
+  ASSERT_OK(RocksDBOptionsParser::VerifyCFOptions(config_options, base_cf_opt,
+                                                  cf_back));
+
+  // ---- DBOptions ----
+  DBOptions base_db_opt;
+  test::RandomInitDBOptions(&base_db_opt, &rnd);
+  std::string db_str;
+  ASSERT_OK(GetStringFromDBOptions(config_options, base_db_opt, &db_str));
+
+  std::unordered_map<std::string, std::string> db_map;
+  ASSERT_OK(StringToMap(db_str, &db_map));
+  for (const auto& [k, v] : db_map) {
+    std::string solo;
+    solo.append(k).append("=").append(v).append(";");
+    std::unordered_map<std::string, std::string> solo_map;
+    ASSERT_OK(StringToMap(solo, &solo_map))
+        << "single-entry round-trip failed for " << k << ": " << v;
+    ASSERT_EQ(solo_map.size(), 1u) << k << "=" << v;
+    ASSERT_EQ(solo_map[k], v) << "single-entry value mismatch for " << k;
+  }
+  std::string db_round;
+  ASSERT_OK(MapToString(db_map, &db_round));
+  DBOptions db_back;
+  ASSERT_OK(
+      GetDBOptionsFromString(config_options, DBOptions(), db_round, &db_back));
+  ASSERT_OK(RocksDBOptionsParser::VerifyDBOptions(config_options, base_db_opt,
+                                                  db_back));
+
+  // RandomInitCFOptions allocates a raw CompactionFilter*; the
+  // ColumnFamilyOptions destructor doesn't own it.
+  delete base_cf_opt.compaction_filter;
+}
+
 TEST_F(OptionsTest, StringToMapRandomTest) {
   std::unordered_map<std::string, std::string> opts_map;
   // Make sure segfault is not hit by semi-random strings
@@ -2018,6 +2205,15 @@ TEST_F(OptionsTest, StringToMapRandomTest) {
         str[pos] = ' ';
         Status s = StringToMap(str, &opts_map);
         ASSERT_TRUE(s.ok() || s.IsInvalidArgument());
+        if (s.ok()) {
+          // Round-trip: StringToMap entries are self-contained, so
+          // MapToString of them must parse back to the same map.
+          std::string regen;
+          ASSERT_OK(MapToString(opts_map, &regen));
+          std::unordered_map<std::string, std::string> reparsed;
+          ASSERT_OK(StringToMap(regen, &reparsed));
+          ASSERT_EQ(reparsed, opts_map) << "regen=" << regen;
+        }
         opts_map.clear();
       }
     }
@@ -2037,8 +2233,22 @@ TEST_F(OptionsTest, StringToMapRandomTest) {
     }
     Status s = StringToMap(str, &opts_map);
     ASSERT_TRUE(s.ok() || s.IsInvalidArgument());
+    if (s.ok()) {
+      std::string regen;
+      ASSERT_OK(MapToString(opts_map, &regen));
+      std::unordered_map<std::string, std::string> reparsed;
+      ASSERT_OK(StringToMap(regen, &reparsed));
+      ASSERT_EQ(reparsed, opts_map) << "regen=" << regen;
+    }
     s = StringToMap("name=" + str, &opts_map);
     ASSERT_TRUE(s.ok() || s.IsInvalidArgument());
+    if (s.ok()) {
+      std::string regen;
+      ASSERT_OK(MapToString(opts_map, &regen));
+      std::unordered_map<std::string, std::string> reparsed;
+      ASSERT_OK(StringToMap(regen, &reparsed));
+      ASSERT_EQ(reparsed, opts_map) << "regen=" << regen;
+    }
     opts_map.clear();
   }
 }
@@ -2460,7 +2670,9 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"enable_blob_files", "true"},
       {"min_blob_size", "1K"},
       {"blob_file_size", "1G"},
+      {"blob_file_writable_file_max_buffer_size", "128K"},
       {"blob_compression_type", "kZSTD"},
+      {"blob_compression_opts", "-14:1:0:0:0:true"},
       {"enable_blob_garbage_collection", "true"},
       {"blob_garbage_collection_age_cutoff", "0.5"},
       {"blob_garbage_collection_force_threshold", "0.75"},
@@ -2472,6 +2684,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"default_temperature", "kHot"},
       {"persist_user_defined_timestamps", "true"},
       {"memtable_max_range_deletions", "0"},
+      {"memtable_veirfy_per_key_checksum_on_seek", "true"},
   };
 
   std::unordered_map<std::string, std::string> db_options_map = {
@@ -2482,6 +2695,8 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"track_and_verify_wals_in_manifest", "true"},
       {"track_and_verify_wals", "true"},
       {"verify_sst_unique_id_in_manifest", "true"},
+      {"async_wal_precreate", "true"},
+      {"fast_sst_open", "true"},
       {"max_open_files", "32"},
       {"max_total_wal_size", "33"},
       {"use_fsync", "true"},
@@ -2503,6 +2718,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"allow_mmap_reads", "true"},
       {"allow_mmap_writes", "false"},
       {"use_direct_reads", "false"},
+      {"use_direct_io_for_compaction_reads", "false"},
       {"use_direct_io_for_flush_and_compaction", "false"},
       {"is_fd_close_on_exec", "true"},
       {"skip_log_error_on_recovery", "false"},
@@ -2613,7 +2829,9 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.enable_blob_files, true);
   ASSERT_EQ(new_cf_opt.min_blob_size, 1ULL << 10);
   ASSERT_EQ(new_cf_opt.blob_file_size, 1ULL << 30);
+  ASSERT_EQ(new_cf_opt.blob_file_writable_file_max_buffer_size, 128ULL << 10);
   ASSERT_EQ(new_cf_opt.blob_compression_type, kZSTD);
+  ASSERT_EQ(new_cf_opt.blob_compression_opts.level, 1);
   ASSERT_EQ(new_cf_opt.enable_blob_garbage_collection, true);
   ASSERT_EQ(new_cf_opt.blob_garbage_collection_age_cutoff, 0.5);
   ASSERT_EQ(new_cf_opt.blob_garbage_collection_force_threshold, 0.75);
@@ -2624,6 +2842,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_cf_opt.default_write_temperature, Temperature::kCold);
   ASSERT_EQ(new_cf_opt.default_temperature, Temperature::kHot);
   ASSERT_EQ(new_cf_opt.persist_user_defined_timestamps, true);
+  ASSERT_TRUE(new_cf_opt.memtable_verify_per_key_checksum_on_seek);
   ASSERT_EQ(new_cf_opt.memtable_max_range_deletions, 0);
 
   cf_options_map["write_buffer_size"] = "hello";
@@ -2669,6 +2888,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.paranoid_checks, true);
   ASSERT_EQ(new_db_opt.track_and_verify_wals_in_manifest, true);
   ASSERT_EQ(new_db_opt.track_and_verify_wals, true);
+  ASSERT_EQ(new_db_opt.async_wal_precreate, true);
   ASSERT_EQ(new_db_opt.max_open_files, 32);
   ASSERT_EQ(new_db_opt.max_total_wal_size, static_cast<uint64_t>(33));
   ASSERT_EQ(new_db_opt.use_fsync, true);
@@ -2691,6 +2911,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.allow_mmap_reads, true);
   ASSERT_EQ(new_db_opt.allow_mmap_writes, false);
   ASSERT_EQ(new_db_opt.use_direct_reads, false);
+  ASSERT_EQ(new_db_opt.use_direct_io_for_compaction_reads, false);
   ASSERT_EQ(new_db_opt.use_direct_io_for_flush_and_compaction, false);
   ASSERT_EQ(new_db_opt.is_fd_close_on_exec, true);
   ASSERT_EQ(new_db_opt.stats_dump_period_sec, 46U);
@@ -3357,11 +3578,18 @@ TEST_F(OptionsOldApiTest, ColumnFamilyOptionsSerialization) {
   // Phase 1: randomly assign base_opt
   // custom type options
   test::RandomInitCFOptions(&base_opt, options, &rnd);
+  base_opt.memtable_verify_per_key_checksum_on_seek = true;
 
   // Phase 2: obtain a string from base_opt
   std::string base_options_file_content;
   ASSERT_OK(
       GetStringFromColumnFamilyOptions(&base_options_file_content, base_opt));
+  ASSERT_EQ(base_options_file_content.find(
+                "memtable_veirfy_per_key_checksum_on_seek="),
+            std::string::npos);
+  ASSERT_NE(base_options_file_content.find(
+                "memtable_verify_per_key_checksum_on_seek="),
+            std::string::npos);
 
   // Phase 3: Set new_opt from the derived string and expect
   //          new_opt == base_opt
@@ -4575,6 +4803,21 @@ TEST_F(OptionTypeInfoTest, TestInvalidArgs) {
                            });
   ASSERT_OK(func_info.Parse(config_options, "b", "1", &i));
   ASSERT_NOK(func_info.Parse(config_options, "b", "x", &i));
+}
+
+TEST_F(OptionTypeInfoTest, StringMapRejectsMalformedEntries) {
+  ConfigOptions config_options;
+  OptionTypeInfo string_map = OptionTypeInfo::StringMap(
+      0, OptionVerificationType::kNormal, OptionTypeFlags::kNone);
+  const std::map<std::string, std::string> expected = {{"existing", "value"}};
+
+  for (const char* malformed : {"{00;}", "{00=zz;}"}) {
+    SCOPED_TRACE(malformed);
+    std::map<std::string, std::string> parsed = expected;
+    ASSERT_TRUE(string_map.Parse(config_options, "map", malformed, &parsed)
+                    .IsInvalidArgument());
+    ASSERT_EQ(parsed, expected);
+  }
 }
 
 TEST_F(OptionTypeInfoTest, TestParseFunc) {

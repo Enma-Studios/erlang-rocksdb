@@ -734,10 +734,48 @@ TEST_P(ColumnFamilyTest, AddDrop) {
               std::vector<std::string>({"default", "four", "three"}));
 }
 
+TEST_P(ColumnFamilyTest, EmptyNameRejected) {
+  // Creating a column family with an empty-string name should be rejected with
+  // InvalidArgument. Empty strings are reserved by various RocksDB APIs and
+  // serialization formats to mean "unknown/unspecified column family" (e.g.
+  // TablePropertiesCollectorFactory::Context::kUnknownColumnFamily, table
+  // properties).
+  //
+  // Prior behavior was silently broken: CreateColumnFamily("") would return
+  // OK and a usable handle, but the CF was not persisted in the manifest --
+  // data written to it was lost on DB reopen.
+  Open();
+  ColumnFamilyHandle* handle = nullptr;
+  Status s =
+      db_->CreateColumnFamily(column_family_options_, std::string(), &handle);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_EQ(handle, nullptr);
+
+  // Same via the bulk-by-names API. The first valid name should still get
+  // created; the failure should come on the empty one.
+  std::vector<ColumnFamilyHandle*> handles;
+  s = db_->CreateColumnFamilies(column_family_options_,
+                                {"ok_name", "", "another"}, &handles);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  // Clean up the partially-created handle ("ok_name") before the failure.
+  ASSERT_EQ(handles.size(), 1U);
+  ASSERT_OK(db_->DropColumnFamily(handles[0]));
+  ASSERT_OK(db_->DestroyColumnFamilyHandle(handles[0]));
+  handles.clear();
+
+  // Same via the bulk-by-descriptor API.
+  s = db_->CreateColumnFamilies(
+      {ColumnFamilyDescriptor("", column_family_options_)}, &handles);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_TRUE(handles.empty());
+}
+
 TEST_P(ColumnFamilyTest, BulkAddDrop) {
   constexpr int kNumCF = 1000;
   ColumnFamilyOptions cf_options;
   WriteOptions write_options;
+  db_options_.write_buffer_manager = std::make_shared<WriteBufferManager>(
+      1 << 30, nullptr, false, WriteBufferFlushPolicy::kFlushLargestAcrossDBs);
   Open();
   std::vector<std::string> cf_names;
   std::vector<ColumnFamilyHandle*> cf_handles;
@@ -748,7 +786,22 @@ TEST_P(ColumnFamilyTest, BulkAddDrop) {
   for (int i = 1; i <= kNumCF; i++) {
     ASSERT_OK(db_->Put(write_options, cf_handles[i - 1], "foo", "bar"));
   }
+  std::atomic<int> per_removal_refreshes{0};
+  std::atomic<int> bulk_refreshes{0};
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "ColumnFamilySet::RemoveColumnFamily:Refresh",
+      [&](void*) { ++per_removal_refreshes; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "ColumnFamilySet::EndBulkFlushableMemAccountingUpdate:Refresh",
+      [&](void*) { ++bulk_refreshes; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+  Defer cleanup_sync_points([] {
+    ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+    ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  });
   ASSERT_OK(db_->DropColumnFamilies(cf_handles));
+  EXPECT_EQ(0, per_removal_refreshes.load());
+  EXPECT_EQ(1, bulk_refreshes.load());
   std::vector<ColumnFamilyDescriptor> cf_descriptors;
   for (auto* handle : cf_handles) {
     delete handle;
@@ -762,7 +815,10 @@ TEST_P(ColumnFamilyTest, BulkAddDrop) {
   for (int i = 1; i <= kNumCF; i++) {
     ASSERT_OK(db_->Put(write_options, cf_handles[i - 1], "foo", "bar"));
   }
+  bulk_refreshes.store(0);
   ASSERT_OK(db_->DropColumnFamilies(cf_handles));
+  EXPECT_EQ(0, per_removal_refreshes.load());
+  EXPECT_EQ(1, bulk_refreshes.load());
   for (auto* handle : cf_handles) {
     delete handle;
   }
@@ -3129,6 +3185,32 @@ TEST_P(ColumnFamilyTest, CreateDropAndDestroy) {
   ASSERT_OK(db_->Flush(FlushOptions(), cfh));
   ASSERT_OK(db_->DropColumnFamily(cfh));
   ASSERT_OK(db_->DestroyColumnFamilyHandle(cfh));
+}
+
+TEST_P(ColumnFamilyTest, DropWaitsForUnorderedMemtableWrite) {
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBImpl::WriteImpl:UnorderedWriteAfterWriteWAL",
+        "ColumnFamilyTest::DropWaitsForUnorderedMemtableWrite:AfterWAL"},
+       {"DBImpl::WaitForPendingWrites:BeforeBlock",
+        "DBImpl::WriteImpl:BeforeUnorderedWriteMemtable"}});
+
+  db_options_.unordered_write = true;
+  Open();
+  ColumnFamilyHandle* cfh;
+  ASSERT_OK(db_->CreateColumnFamily(ColumnFamilyOptions(), "yoyo", &cfh));
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+  port::Thread writer(
+      [&] { ASSERT_OK(db_->Put(WriteOptions(), cfh, "foo", "bar")); });
+
+  TEST_SYNC_POINT(
+      "ColumnFamilyTest::DropWaitsForUnorderedMemtableWrite:AfterWAL");
+  ASSERT_OK(db_->DropColumnFamily(cfh));
+  writer.join();
+  ASSERT_OK(db_->DestroyColumnFamilyHandle(cfh));
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 TEST_P(ColumnFamilyTest, CreateDropAndDestroyWithoutFileDeletion) {

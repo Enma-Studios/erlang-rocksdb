@@ -10,6 +10,14 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+struct MetadataReadBounds {
+  // The snapshot-visible sequence and the upper bound sampled for this read.
+  // Lookups scan through the upper bound but return data only through the
+  // snapshot sequence.
+  SequenceNumber read_snapshot_seq;
+  SequenceNumber newer_version_upper_bound_seq;
+};
+
 class ReadCallback {
  public:
   explicit ReadCallback(SequenceNumber last_visible_seq)
@@ -38,7 +46,28 @@ class ReadCallback {
     }
   }
 
+  virtual const MetadataReadBounds* GetMetadataReadBounds() const {
+    return nullptr;
+  }
+
+  virtual bool NeedToTrackNewerVersions(
+      const bool* /*per_key_result*/ = nullptr) const {
+    return false;
+  }
+
+  virtual bool IsNewerVisibleForMetadataRead(SequenceNumber /*seq*/) {
+    // Metadata reads with custom visibility callbacks are unsupported. The
+    // timestamp callback overrides this method for regular DB reads.
+    return false;
+  }
+
+  virtual void MaybeRecordNewerVersion(SequenceNumber /*seq*/,
+                                       ValueType /*type*/,
+                                       bool* /*per_key_result*/ = nullptr) {}
+
   inline SequenceNumber max_visible_seq() { return max_visible_seq_; }
+
+  inline SequenceNumber min_uncommitted() const { return min_uncommitted_; }
 
   // Refresh to a more recent visible seq
   virtual void Refresh(SequenceNumber seq) { max_visible_seq_ = seq; }

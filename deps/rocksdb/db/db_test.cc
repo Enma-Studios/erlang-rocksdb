@@ -1334,16 +1334,16 @@ void CheckColumnFamilyMeta(
                 file_meta_from_files.largest.user_key().ToString());
       ASSERT_EQ(file_meta_from_cf.oldest_blob_file_number,
                 file_meta_from_files.oldest_blob_file_number);
-      ASSERT_EQ(file_meta_from_cf.oldest_ancester_time,
-                file_meta_from_files.oldest_ancester_time);
+      ASSERT_EQ(file_meta_from_cf.oldest_ancestor_time,
+                file_meta_from_files.oldest_ancestor_time);
       ASSERT_EQ(file_meta_from_cf.file_creation_time,
                 file_meta_from_files.file_creation_time);
       ASSERT_GE(file_meta_from_cf.file_creation_time, start_time);
       ASSERT_LE(file_meta_from_cf.file_creation_time, end_time);
       ASSERT_EQ(file_meta_from_cf.epoch_number,
                 file_meta_from_files.epoch_number);
-      ASSERT_GE(file_meta_from_cf.oldest_ancester_time, start_time);
-      ASSERT_LE(file_meta_from_cf.oldest_ancester_time, end_time);
+      ASSERT_GE(file_meta_from_cf.oldest_ancestor_time, start_time);
+      ASSERT_LE(file_meta_from_cf.oldest_ancestor_time, end_time);
       // More from FileStorageInfo
       ASSERT_EQ(file_meta_from_cf.file_type, kTableFile);
       ASSERT_EQ(file_meta_from_cf.name,
@@ -3516,6 +3516,18 @@ class ModelDB : public DB {
     return Status::NotSupported("Not implemented");
   }
 
+  using DB::PrepareFileIngestion;
+  Status PrepareFileIngestion(
+      const std::vector<IngestExternalFileArg>& /*args*/,
+      std::unique_ptr<FileIngestionHandle>* /*handle*/) override {
+    return Status::NotSupported("Not implemented.");
+  }
+
+  Status CommitFileIngestionHandles(
+      std::vector<std::unique_ptr<FileIngestionHandle>> /*handles*/) override {
+    return Status::NotSupported("Not implemented.");
+  }
+
   using DB::CreateColumnFamilyWithImport;
   Status CreateColumnFamilyWithImport(
       const ColumnFamilyOptions& /*options*/,
@@ -3584,6 +3596,11 @@ class ModelDB : public DB {
     }
   }
   Status NewIterators(const ReadOptions& /*options*/,
+                      const std::vector<ColumnFamilyHandle*>& /*column_family*/,
+                      std::vector<Iterator*>* /*iterators*/) override {
+    return Status::NotSupported("Not supported yet");
+  }
+  Status NewIterators(const std::vector<ReadOptions>& /*options*/,
                       const std::vector<ColumnFamilyHandle*>& /*column_family*/,
                       std::vector<Iterator*>* /*iterators*/) override {
     return Status::NotSupported("Not supported yet");
@@ -3713,6 +3730,8 @@ class ModelDB : public DB {
   void DisableManualCompaction() override {}
   void AbortAllCompactions() override {}
   void ResumeAllCompactions() override {}
+  void AbortCompactions(ColumnFamilyHandle* /*column_family*/) override {}
+  void ResumeCompactions(ColumnFamilyHandle* /*column_family*/) override {}
 
   Status WaitForCompact(
       const WaitForCompactOptions& /* wait_for_compact_options */) override {
@@ -3773,6 +3792,12 @@ class ModelDB : public DB {
     return Status::OK();
   }
 
+  Status GetPreparedFileInfoForExternalSstIngestion(
+      const std::string& /*file_path*/,
+      std::shared_ptr<const PreparedFileInfo>* /*file_info*/) override {
+    return Status::NotSupported();
+  }
+
   Status GetSortedWalFiles(VectorLogPtr& /*files*/) override {
     return Status::OK();
   }
@@ -3786,11 +3811,10 @@ class ModelDB : public DB {
     return Status::NotSupported();
   }
 
-  Status GetUpdatesSince(
-      ROCKSDB_NAMESPACE::SequenceNumber,
-      std::unique_ptr<ROCKSDB_NAMESPACE::TransactionLogIterator>*,
-      const TransactionLogIterator::ReadOptions& /*read_options*/ =
-          TransactionLogIterator::ReadOptions()) override {
+  Status GetUpdatesSince(ROCKSDB_NAMESPACE::SequenceNumber,
+                         std::unique_ptr<ROCKSDB_NAMESPACE::WalIterator>*,
+                         const WalIterator::ReadOptions& /*read_options*/ =
+                             WalIterator::ReadOptions()) override {
     return Status::NotSupported("Not supported in Model DB");
   }
 
@@ -8236,6 +8260,98 @@ TEST_P(OpenFilesAsyncTest, BeforeRead) {
     ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
     Close();
   }
+}
+
+// For modern DBs (manifest carries file_creation_time),
+// GetCreationTimeOfOldestFile returns the real value without waiting for async
+// file open.
+TEST_P(OpenFilesAsyncTest, GetCreationTimeOfOldestFileSkipsWaitForModernDB) {
+  if (max_open_files_ != -1) {
+    return;
+  }
+
+  Options options = CurrentOptions();
+  ASSERT_NO_FATAL_FAILURE(SetupData(options));
+
+  // If WaitForAsyncFileOpen is entered, the test fails -- modern DBs must
+  // never need the wait.
+  std::atomic<bool> waited{false};
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::WaitForAsyncFileOpen::BeforeWait",
+      [&](void* /*arg*/) { waited.store(true); });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  OpenTestDB(options);
+
+  uint64_t creation_time = std::numeric_limits<uint64_t>::max();
+  ASSERT_OK(dbfull()->GetCreationTimeOfOldestFile(&creation_time));
+  EXPECT_GT(creation_time, 0);
+  EXPECT_LT(creation_time, std::numeric_limits<uint64_t>::max());
+  EXPECT_FALSE(waited.load());
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+  Close();
+}
+
+// For legacy DBs (manifest lacks file_creation_time, value comes from the
+// pinned reader), GetCreationTimeOfOldestFile must block until
+// BGWorkAsyncFileOpen pins the readers; otherwise it returns 0 (the "info
+// unavailable" sentinel) instead of the real value.
+TEST_P(OpenFilesAsyncTest,
+       GetCreationTimeOfOldestFileBlocksOnAsyncOpenForLegacyDB) {
+  if (max_open_files_ != -1) {
+    return;
+  }
+
+  Options options = CurrentOptions();
+  ASSERT_NO_FATAL_FAILURE(SetupData(options));
+
+  // Simulate a legacy DB: force TryGetFileCreationTime to return
+  // kUnknownFileCreationTime until BGWorkAsyncFileOpen completes (i.e., what
+  // would happen if the manifest had no file_creation_time and the pinned
+  // reader was the only source).
+  std::atomic<bool> async_open_done{false};
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::BGWorkAsyncFileOpen:Done",
+      [&](void* /*arg*/) { async_open_done.store(true); });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "Version::GetCreationTimeOfOldestFile::FileCreationTime", [&](void* arg) {
+        if (!async_open_done.load()) {
+          *static_cast<uint64_t*>(arg) = kUnknownFileCreationTime;
+        }
+      });
+
+  // Dependency chain: caller's first pass returns 0, enters
+  // WaitForAsyncFileOpen -> main thread confirms wait -> main thread releases
+  // async open -> background worker completes -> caller wakes -> second pass
+  // sees the real value.
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBImpl::WaitForAsyncFileOpen::BeforeWait",
+        "OpenFilesAsyncTest::CreationTime::CallerBlocked"},
+       {"OpenFilesAsyncTest::CreationTime::CallerBlocked",
+        "OpenFilesAsyncTest::CreationTime::ReleaseAsyncOpen"},
+       {"OpenFilesAsyncTest::CreationTime::ReleaseAsyncOpen",
+        "DBImpl::BGWorkAsyncFileOpen::Start"}});
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  OpenTestDB(options);
+
+  uint64_t creation_time = std::numeric_limits<uint64_t>::max();
+  port::Thread caller([&]() {
+    ASSERT_OK(dbfull()->GetCreationTimeOfOldestFile(&creation_time));
+  });
+
+  TEST_SYNC_POINT("OpenFilesAsyncTest::CreationTime::CallerBlocked");
+  TEST_SYNC_POINT("OpenFilesAsyncTest::CreationTime::ReleaseAsyncOpen");
+  caller.join();
+
+  EXPECT_GT(creation_time, 0);
+  EXPECT_LT(creation_time, std::numeric_limits<uint64_t>::max());
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+  Close();
 }
 
 TEST_P(OpenFilesAsyncTest, Shutdown) {
