@@ -83,10 +83,13 @@ jobs:
         run: rebar3 eunit
   package:
     # build the tree the way a hex consumer gets it: no .git, no system
-    # snappy/lz4 and no bundled overrides
+    # snappy/lz4 and no bundled overrides. Prebuilt is forced off so the
+    # job keeps exercising the source build (the default path would now
+    # happily fetch release binaries for the matching version tag).
     runs-on: ubuntu-24.04
     env:
       ERLANG_ROCKSDB_OPTS: ""
+      ERLANG_ROCKSDB_PREBUILT: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
